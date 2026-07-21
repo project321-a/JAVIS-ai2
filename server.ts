@@ -61,6 +61,15 @@ async function callGeminiWithFallback(params: {
     } catch (err: any) {
       console.warn(`[Gemini Fallback Client] Model ${model} failed:`, err?.message || err);
       lastError = err;
+      
+      const errMsg = String(err?.message || err || '').toLowerCase();
+      const errStatus = String(err?.status || '').toUpperCase();
+      const errCode = err?.code || (err?.status === 429 ? 429 : 0);
+      
+      if (errCode === 429 || errStatus === 'RESOURCE_EXHAUSTED' || errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('rate-limit') || errMsg.includes('exhausted')) {
+        console.warn(`[Gemini Fallback Client] Quota/Rate Limit Exhausted (429) detected on ${model}. Immediately falling back to local cognitive matrix to save bandwidth.`);
+        throw err;
+      }
     }
   }
   throw lastError || new Error('All Gemini model nodes are currently unresponsive or rate-limited.');

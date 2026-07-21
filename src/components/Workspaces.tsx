@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Sparkles, Terminal, FileText, CheckCircle2, Circle, AlertCircle, ShoppingCart, Archive, DollarSign, Briefcase } from 'lucide-react';
+import { Sparkles, Terminal, FileText, CheckCircle2, Circle, AlertCircle, ShoppingCart, Archive, DollarSign, Briefcase, ArrowUpDown } from 'lucide-react';
 import { Project, Task } from '../types';
 
 interface WorkspacesProps {
@@ -29,6 +29,75 @@ export default function Workspaces({
   const [newHoneyStock, setNewHoneyStock] = useState(120);
 
   const activeProject = projects.find((p) => p.id === activeProjId);
+  const [sortByPriority, setSortByPriority] = useState(false);
+
+  // Helper to determine Project's urgency level
+  const getProjectUrgency = (pId: string | undefined): number => {
+    if (!pId) return 0;
+    if (pId === 'p1') return 3.0; // StreamAIV / personal-os (High complexity, build fails)
+    if (pId === 'p2') return 2.5; // Sweet Amber Farms Honey Business (orders pending)
+    if (pId === 'p3') return 2.0; // Interview Prep
+    if (pId === 'p4') return 4.0; // Grandma/Family (Direct values-aligned, highest priority)
+    return 1.0;
+  };
+
+  // Helper to compute a composite score for a task
+  const getTaskScore = (task: Task) => {
+    // 1. Task Priority Weight
+    let taskPriorityWeight = 0;
+    if (task.priority === 'high') taskPriorityWeight = 30;
+    else if (task.priority === 'medium') taskPriorityWeight = 20;
+    else if (task.priority === 'low') taskPriorityWeight = 10;
+
+    // 2. Project Urgency Weight
+    const projectUrgency = getProjectUrgency(task.projectId);
+    const projectUrgencyWeight = projectUrgency * 10; // Up to 40 points
+
+    // 3. Deadline Proximity Weight
+    let deadlineProximityWeight = 0;
+    if (task.dueDate) {
+      const today = new Date('2026-07-21');
+      const due = new Date(task.dueDate);
+      const diffTime = due.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays < 0) {
+        // Overdue gets maximum proximity weight
+        deadlineProximityWeight = 50;
+      } else if (diffDays === 0) {
+        // Due today
+        deadlineProximityWeight = 45;
+      } else if (diffDays <= 2) {
+        // Extremely close (next 2 days)
+        deadlineProximityWeight = 35;
+      } else if (diffDays <= 7) {
+        // Within a week
+        deadlineProximityWeight = 20;
+      } else {
+        // More than a week
+        deadlineProximityWeight = 5;
+      }
+    }
+
+    // Active/uncompleted tasks always rank higher than completed tasks
+    const statusMultiplier = task.completed ? 0.01 : 1.0;
+
+    return (taskPriorityWeight + projectUrgencyWeight + deadlineProximityWeight) * statusMultiplier;
+  };
+
+  // Filter & sort active project tasks
+  const filteredAndSortedTasks = useMemo(() => {
+    if (!activeProject) return [];
+    const projectTasks = tasks.filter((t) => t.projectId === activeProject.id);
+    if (!sortByPriority) return projectTasks;
+
+    return [...projectTasks].sort((a, b) => {
+      // Sort in descending order of priority score
+      const scoreA = getTaskScore(a);
+      const scoreB = getTaskScore(b);
+      return scoreB - scoreA;
+    });
+  }, [tasks, activeProject?.id, sortByPriority]);
 
   // Recharts fake financial data
   const revenueData = [
@@ -119,34 +188,53 @@ export default function Workspaces({
               
               {/* Task board subset */}
               <div className="space-y-3 font-mono text-xs">
-                <span className="text-[10px] text-white/40 uppercase tracking-wider block">Workspace Tasks</span>
+                <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
+                  <span className="text-[10px] text-white/40 uppercase tracking-wider">Workspace Tasks</span>
+                  <button
+                    onClick={() => setSortByPriority(!sortByPriority)}
+                    className={`px-2 py-0.5 rounded border text-[8px] font-mono uppercase tracking-wider transition flex items-center space-x-1 cursor-pointer ${
+                      sortByPriority
+                        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300 shadow-[0_0_8px_rgba(6,182,212,0.25)]'
+                        : 'bg-transparent border-white/10 text-slate-400 hover:text-white'
+                    }`}
+                    title="Automatically reorders tasks based on deadline proximity and project urgency levels"
+                  >
+                    <ArrowUpDown className="w-2.5 h-2.5" />
+                    <span>{sortByPriority ? 'Priority Sorted' : 'Sort by Priority'}</span>
+                  </button>
+                </div>
                 <div className="space-y-2 max-h-[220px] overflow-y-auto custom-scrollbar">
-                  {tasks
-                    .filter((t) => t.projectId === activeProject.id)
-                    .map((task) => (
-                      <button
-                        key={task.id}
-                        onClick={() => onToggleTask(task.id)}
-                        className="w-full flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5 hover:border-white/10 text-left transition"
-                      >
-                        <div className="flex items-center space-x-2.5 min-w-0">
-                          {task.completed ? (
-                            <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-                          ) : (
-                            <Circle className="w-4 h-4 text-white/20 shrink-0" />
-                          )}
-                          <span className={`truncate font-sans text-white/80 text-[11px] ${task.completed ? 'line-through text-white/40' : ''}`}>
-                            {task.title}
+                  {filteredAndSortedTasks.map((task) => (
+                    <button
+                      key={task.id}
+                      onClick={() => onToggleTask(task.id)}
+                      className="w-full flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5 hover:border-white/10 text-left transition animate-fadeIn"
+                    >
+                      <div className="flex items-center space-x-2.5 min-w-0">
+                        {task.completed ? (
+                          <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
+                        ) : (
+                          <Circle className="w-4 h-4 text-white/20 shrink-0" />
+                        )}
+                        <span className={`truncate font-sans text-white/80 text-[11px] ${task.completed ? 'line-through text-white/40' : ''}`}>
+                          {task.title}
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-1.5">
+                        {task.dueDate && (
+                          <span className="text-[8px] text-white/40 font-mono">
+                            {new Date(task.dueDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                           </span>
-                        </div>
-                        <span className={`text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                        )}
+                        <span className={`text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded font-mono ${
                           task.priority === 'high' ? 'bg-red-500/10 border border-red-500/20 text-red-400' : 'bg-white/5 border border-white/5 text-white/50'
                         }`}>
                           {task.priority}
                         </span>
-                      </button>
-                    ))}
-                  {tasks.filter((t) => t.projectId === activeProject.id).length === 0 && (
+                      </div>
+                    </button>
+                  ))}
+                  {filteredAndSortedTasks.length === 0 && (
                     <p className="text-[10px] text-white/40">No active tasks in this workspace.</p>
                   )}
                 </div>

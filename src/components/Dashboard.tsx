@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { ShieldAlert, Zap, Compass, Activity, BrainCircuit, Bell, Clock, Sun, RefreshCw, AlertTriangle, Play, GitBranch, Server, CheckCircle2, BellRing, Sparkles, Eye, Trash, Database, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { LineChart, Line, XAxis, YAxis, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 import { Task, Event, Memory, SystemMetrics, ProactiveBriefing } from '../types';
 import JarvisHudCore from './JarvisHudCore';
 
@@ -18,6 +19,7 @@ interface DashboardProps {
   onAcknowledgeBriefing?: (id: string) => void;
   onTriggerSystemScan?: () => void;
   onAddMemory?: (content: string, category: 'voice' | 'idea') => void;
+  onRestoreState?: (tasks: Task[], events: Event[], memories: Memory[]) => void;
 }
 
 export default function Dashboard({
@@ -34,6 +36,7 @@ export default function Dashboard({
   onAcknowledgeBriefing,
   onTriggerSystemScan,
   onAddMemory,
+  onRestoreState,
 }: DashboardProps) {
   const [time, setTime] = useState(new Date());
 
@@ -178,6 +181,67 @@ export default function Dashboard({
   const formattedTime = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const formattedDate = time.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
 
+  // Sync State file uploader reference and handler
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleRestoreFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const parsed = JSON.parse(content);
+        
+        if (!parsed || !Array.isArray(parsed.tasks) || !Array.isArray(parsed.events) || !Array.isArray(parsed.memories)) {
+          throw new Error("Invalid backup file structure. Must contain tasks, events, and memories arrays.");
+        }
+
+        if (onRestoreState) {
+          onRestoreState(parsed.tasks, parsed.events, parsed.memories);
+          setSystemToast({
+            message: `System state synchronized! Restored ${parsed.tasks.length} tasks, ${parsed.events.length} events, and ${parsed.memories.length} memories.`,
+            type: "success"
+          });
+        }
+      } catch (err: any) {
+        console.error("Failed to restore state:", err);
+        setSystemToast({
+          message: err?.message || "Invalid JSON file or corrupt state format.",
+          type: "warning"
+        });
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // Compute Cognitive Load over the last 7 days based on completion density
+  const cognitiveLoadData = useMemo(() => {
+    const data = [];
+    const today = new Date();
+    
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const dayName = d.toLocaleDateString([], { weekday: 'short' });
+
+      const incompleteCount = tasks.filter(t => !t.completed && t.dueDate <= dateStr).length;
+      const completedCount = tasks.filter(t => t.completed).length;
+
+      const baseLoad = 40 + (incompleteCount * 15) - (completedCount * 4) + (stressLevel * 4);
+      const loadValue = Math.max(15, Math.min(95, baseLoad));
+
+      data.push({
+        name: dayName,
+        load: Math.round(loadValue),
+      });
+    }
+    return data;
+  }, [tasks, stressLevel]);
+
   // Compute stats
   const activeTasks = tasks.filter((t) => !t.completed);
   const todaysMission = activeTasks.find((t) => t.priority === 'high') || activeTasks[0];
@@ -199,6 +263,7 @@ export default function Dashboard({
             onAddMemory={onAddMemory}
             unfinishedTasksCount={activeTasks.length}
             stressLevel={stressLevel}
+            onTriggerVoiceAssistant={() => onTriggerViewChange('assistant')}
           />
         </div>
 
@@ -276,26 +341,44 @@ export default function Dashboard({
             </div>
 
             <div className="grid grid-cols-1 gap-2">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-1.5">
                 <button
                   id="btn-trigger-proactive-scan"
                   onClick={onTriggerSystemScan}
-                  className="px-2 py-2 bg-cyan-600/10 hover:bg-cyan-600/20 active:bg-cyan-600/30 border border-cyan-500/20 text-cyan-400 rounded text-[10px] font-bold uppercase tracking-wider transition flex items-center justify-center space-x-1.5 cursor-pointer"
+                  className="px-1 py-2 bg-cyan-600/10 hover:bg-cyan-600/20 active:bg-cyan-600/30 border border-cyan-500/20 text-cyan-400 rounded text-[9px] font-bold uppercase tracking-wider transition flex items-center justify-center space-x-1 cursor-pointer"
                   title="Scan background channels for new commits/events"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Scan Telemetry</span>
+                  <span>Scan</span>
                 </button>
 
                 <button
                   id="btn-backup-system-state"
                   onClick={handleBackupState}
-                  className="px-2 py-2 bg-purple-600/10 hover:bg-purple-600/20 active:bg-purple-600/30 border border-purple-500/20 text-purple-400 rounded text-[10px] font-bold uppercase tracking-wider transition flex items-center justify-center space-x-1.5 cursor-pointer"
+                  className="px-1 py-2 bg-purple-600/10 hover:bg-purple-600/20 active:bg-purple-600/30 border border-purple-500/20 text-purple-400 rounded text-[9px] font-bold uppercase tracking-wider transition flex items-center justify-center space-x-1 cursor-pointer"
                   title="Backup current memories, tasks, and events to JSON file"
                 >
                   <Database className="w-3.5 h-3.5" />
-                  <span>Backup State</span>
+                  <span>Backup</span>
                 </button>
+
+                <button
+                  id="btn-sync-system-state"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-1 py-2 bg-amber-600/10 hover:bg-amber-600/20 active:bg-amber-600/30 border border-amber-500/20 text-amber-400 rounded text-[9px] font-bold uppercase tracking-wider transition flex items-center justify-center space-x-1 cursor-pointer"
+                  title="Sync and restore state by uploading a JSON backup file"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Sync State</span>
+                </button>
+
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept=".json"
+                  onChange={handleRestoreFileChange}
+                  className="hidden"
+                />
               </div>
 
               <button
@@ -399,63 +482,117 @@ export default function Dashboard({
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         
         {/* Left Side: Cognitive and physical health meters */}
-        <div className="bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-xl space-y-4 shadow-[0_4px_30px_rgba(0,0,0,0.4)]">
-          <div className="flex items-center space-x-2 border-b border-white/5 pb-3">
-            <Activity className="w-4.5 h-4.5 text-cyan-400" />
-            <h3 className="font-mono text-xs uppercase tracking-wider text-white/80">Cognitive Indices</h3>
+        <div className="space-y-6">
+          <div className="bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-xl space-y-4 shadow-[0_4px_30px_rgba(0,0,0,0.4)]">
+            <div className="flex items-center space-x-2 border-b border-white/5 pb-3">
+              <Activity className="w-4.5 h-4.5 text-cyan-400" />
+              <h3 className="font-mono text-xs uppercase tracking-wider text-white/80">Cognitive Indices</h3>
+            </div>
+
+            <div className="space-y-3 font-mono text-xs">
+              {/* Energy Score */}
+              <div>
+                <div className="flex justify-between items-center text-white/50 mb-1">
+                  <span>Energy Index</span>
+                  <span className="text-yellow-400 font-bold">{energyScore}%</span>
+                </div>
+                <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
+                  <div className="bg-yellow-400 h-full" style={{ width: `${energyScore}%` }} />
+                </div>
+              </div>
+
+              {/* Stress Level */}
+              <div>
+                <div className="flex justify-between items-center text-white/50 mb-1">
+                  <span>Stress Threshold</span>
+                  <span className={`font-bold ${stressLevel > 6 ? 'text-red-400' : 'text-cyan-400'}`}>{stressLevel}/10</span>
+                </div>
+                <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
+                  <div className={`h-full ${stressLevel > 6 ? 'bg-red-400' : 'bg-cyan-400'}`} style={{ width: `${stressLevel * 10}%` }} />
+                </div>
+              </div>
+
+              {/* Focus level */}
+              <div>
+                <div className="flex justify-between items-center text-white/50 mb-1">
+                  <span>Focus Coherence</span>
+                  <span className="text-emerald-400 font-bold">{focusLevel}%</span>
+                </div>
+                <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
+                  <div className="bg-emerald-400 h-full" style={{ width: `${focusLevel}%` }} />
+                </div>
+              </div>
+
+              {/* Burnout risk */}
+              <div>
+                <div className="flex justify-between items-center text-white/50 mb-1">
+                  <span>Burnout Risk</span>
+                  <span className={`font-bold ${burnoutRisk === 'HIGH' ? 'text-red-500' : 'text-white/75'}`}>{burnoutRisk}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Trigger Focus mode button */}
+            <button
+              onClick={onTriggerFocusMode}
+              className="w-full py-2.5 bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 text-cyan-400 font-mono text-xs font-bold uppercase rounded-lg tracking-wider transition flex items-center justify-center space-x-1.5 shadow-[0_0_15px_-5px_rgba(34,211,238,0.3)]"
+            >
+              <Zap className="w-4 h-4 animate-bounce" />
+              <span>Initiate AI Focus Mode</span>
+            </button>
           </div>
 
-          <div className="space-y-3 font-mono text-xs">
-            {/* Energy Score */}
-            <div>
-              <div className="flex justify-between items-center text-white/50 mb-1">
-                <span>Energy Index</span>
-                <span className="text-yellow-400 font-bold">{energyScore}%</span>
-              </div>
-              <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
-                <div className="bg-yellow-400 h-full" style={{ width: `${energyScore}%` }} />
-              </div>
+          {/* Cognitive Load Metric Card with Line Chart */}
+          <div className="bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-xl space-y-3 shadow-[0_4px_30px_rgba(0,0,0,0.4)] font-mono text-xs relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-1 h-full bg-cyan-400 animate-pulse" />
+            <div className="flex items-center justify-between border-b border-white/5 pb-2">
+              <span className="text-[10px] text-white/40 uppercase tracking-widest block">Cognitive Load Index</span>
+              <span className="text-[8px] text-cyan-400 uppercase tracking-wider font-bold">7-Day Density</span>
+            </div>
+            
+            <div className="flex items-baseline justify-between pt-1">
+              <p className="text-2xl font-semibold text-white tracking-tight">
+                {cognitiveLoadData[cognitiveLoadData.length - 1]?.load || 40}%
+              </p>
+              <span className={`text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded font-bold ${
+                (cognitiveLoadData[cognitiveLoadData.length - 1]?.load || 40) > 65 
+                  ? 'bg-red-500/10 border border-red-500/20 text-red-400' 
+                  : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+              }`}>
+                {(cognitiveLoadData[cognitiveLoadData.length - 1]?.load || 40) > 65 ? '▲ Peak Burden' : '▼ Stabilized'}
+              </span>
             </div>
 
-            {/* Stress Level */}
-            <div>
-              <div className="flex justify-between items-center text-white/50 mb-1">
-                <span>Stress Threshold</span>
-                <span className={`font-bold ${stressLevel > 6 ? 'text-red-400' : 'text-cyan-400'}`}>{stressLevel}/10</span>
-              </div>
-              <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
-                <div className={`h-full ${stressLevel > 6 ? 'bg-red-400' : 'bg-cyan-400'}`} style={{ width: `${stressLevel * 10}%` }} />
-              </div>
+            {/* Line chart */}
+            <div className="h-28 w-full pt-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={cognitiveLoadData} margin={{ top: 5, right: 5, left: -30, bottom: 5 }}>
+                  <XAxis dataKey="name" stroke="#ffffff30" fontSize={8} tickLine={false} />
+                  <YAxis stroke="#ffffff30" fontSize={8} tickLine={false} domain={[0, 100]} />
+                  <ChartTooltip
+                    contentStyle={{
+                      background: '#020408f0',
+                      border: '1px solid #ffffff15',
+                      fontSize: 9,
+                      borderRadius: 8,
+                      fontFamily: 'monospace'
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="load"
+                    stroke="#22d3ee"
+                    strokeWidth={2}
+                    dot={{ fill: '#22d3ee', r: 3 }}
+                    activeDot={{ r: 5, strokeWidth: 0 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
-
-            {/* Focus level */}
-            <div>
-              <div className="flex justify-between items-center text-white/50 mb-1">
-                <span>Focus Coherence</span>
-                <span className="text-emerald-400 font-bold">{focusLevel}%</span>
-              </div>
-              <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
-                <div className="bg-emerald-400 h-full" style={{ width: `${focusLevel}%` }} />
-              </div>
-            </div>
-
-            {/* Burnout risk */}
-            <div>
-              <div className="flex justify-between items-center text-white/50 mb-1">
-                <span>Burnout Risk</span>
-                <span className={`font-bold ${burnoutRisk === 'HIGH' ? 'text-red-500' : 'text-white/75'}`}>{burnoutRisk}</span>
-              </div>
-            </div>
+            <p className="text-[9px] text-white/45 leading-normal font-sans">
+              Aggregates uncompleted deadlines, local stress levels, and weekly chore velocity.
+            </p>
           </div>
-
-          {/* Quick Trigger Focus mode button */}
-          <button
-            onClick={onTriggerFocusMode}
-            className="w-full py-2.5 bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 text-cyan-400 font-mono text-xs font-bold uppercase rounded-lg tracking-wider transition flex items-center justify-center space-x-1.5 shadow-[0_0_15px_-5px_rgba(34,211,238,0.3)]"
-          >
-            <Zap className="w-4 h-4 animate-bounce" />
-            <span>Initiate AI Focus Mode</span>
-          </button>
         </div>
 
         {/* Center 2 blocks: Mission Control and Upcoming Calendars */}

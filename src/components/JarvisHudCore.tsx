@@ -23,17 +23,25 @@ interface JarvisHudCoreProps {
   onAddMemory?: (content: string, category: 'voice' | 'idea') => void;
   unfinishedTasksCount?: number;
   stressLevel?: number;
+  onTriggerVoiceAssistant?: () => void;
 }
 
 export default function JarvisHudCore({
   onAddMemory,
   unfinishedTasksCount = 4,
-  stressLevel = 4
+  stressLevel = 4,
+  onTriggerVoiceAssistant
 }: JarvisHudCoreProps) {
   const [chatInput, setChatInput] = useState('');
   const [status, setStatus] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
   const [speechActive, setSpeechActive] = useState(true);
   const [activeMind, setActiveMind] = useState<'architect' | 'compass' | 'growth'>('architect');
+  const [voiceActivationEnabled, setVoiceActivationEnabled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('jarvis_voice_activation') === 'true';
+    }
+    return false;
+  });
   const [telemetry, setTelemetry] = useState({
     coherence: 98.4,
     attention: 92,
@@ -87,6 +95,90 @@ export default function JarvisHudCore({
     }, 3000);
     return () => clearInterval(timer);
   }, []);
+
+  // Sync Voice Activation with localStorage
+  useEffect(() => {
+    localStorage.setItem('jarvis_voice_activation', String(voiceActivationEnabled));
+  }, [voiceActivationEnabled]);
+
+  // Continuous background keyword detection
+  useEffect(() => {
+    if (!voiceActivationEnabled) return;
+
+    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+      console.warn("Speech recognition not supported in this environment.");
+      return;
+    }
+
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    let recognition: any = null;
+    let shouldRestart = true;
+
+    const startRecognition = () => {
+      try {
+        recognition = new SpeechRec();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+
+        recognition.onresult = (event: any) => {
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const transcript = event.results[i][0].transcript.toLowerCase();
+            if (
+              transcript.includes('jarvis') ||
+              transcript.includes('assistant') ||
+              transcript.includes('hey jarvis') ||
+              transcript.includes('open assistant')
+            ) {
+              shouldRestart = false;
+              recognition.stop();
+              
+              if (speechActive && 'speechSynthesis' in window) {
+                const confUtterance = new SpeechSynthesisUtterance("Vocal match confirmed. Launching voice assistant view, Sam.");
+                window.speechSynthesis.speak(confUtterance);
+              }
+              
+              if (onTriggerVoiceAssistant) {
+                onTriggerVoiceAssistant();
+              }
+              break;
+            }
+          }
+        };
+
+        recognition.onerror = (err: any) => {
+          if (err.error !== 'no-speech') {
+            console.warn("Background keyword listener error:", err.error);
+          }
+        };
+
+        recognition.onend = () => {
+          if (shouldRestart && voiceActivationEnabled) {
+            setTimeout(() => {
+              if (shouldRestart && voiceActivationEnabled) {
+                startRecognition();
+              }
+            }, 1000);
+          }
+        };
+
+        recognition.start();
+      } catch (err) {
+        console.error("Background continuous listener failed:", err);
+      }
+    };
+
+    startRecognition();
+
+    return () => {
+      shouldRestart = false;
+      if (recognition) {
+        try {
+          recognition.stop();
+        } catch (e) {}
+      }
+    };
+  }, [voiceActivationEnabled, onTriggerVoiceAssistant, speechActive]);
 
   // Hologram Circular Canvas Rendering
   useEffect(() => {
@@ -481,6 +573,24 @@ export default function JarvisHudCore({
       {/* Interactive Controls & Input Band */}
       <div className="w-full space-y-4">
         
+        {/* Voice Activation persistent toggle */}
+        <div className="flex items-center justify-between bg-amber-500/5 border border-amber-500/10 rounded-xl px-4 py-2.5 text-[10px] font-mono">
+          <div className="flex items-center space-x-2">
+            <Radio className={`w-3.5 h-3.5 ${voiceActivationEnabled ? 'text-amber-400 animate-pulse' : 'text-slate-500'}`} />
+            <span className="text-slate-300 uppercase tracking-wider">Voice Activation (Continuous Keyword)</span>
+          </div>
+          <button
+            onClick={() => setVoiceActivationEnabled(!voiceActivationEnabled)}
+            className={`px-2.5 py-1 rounded border text-[9px] font-bold uppercase tracking-wider transition cursor-pointer ${
+              voiceActivationEnabled
+                ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.25)]'
+                : 'bg-transparent border-white/10 text-slate-400 hover:text-white'
+            }`}
+          >
+            {voiceActivationEnabled ? 'ACTIVE: "JARVIS"' : 'OFF'}
+          </button>
+        </div>
+
         {/* Quick Mind Configuration selector */}
         <div className="flex items-center justify-center space-x-2 border-t border-b border-amber-500/10 py-3 text-[10px] font-mono">
           <span className="text-slate-400 uppercase mr-1">Cognitive Vector:</span>

@@ -462,6 +462,42 @@ export default function App() {
     setActiveAgent(agent);
   };
 
+  const handleRestoreState = async (restoredTasks: Task[], restoredEvents: Event[], restoredMemories: Memory[]) => {
+    setTasks(restoredTasks);
+    setEvents(restoredEvents);
+    setMemories(restoredMemories);
+    
+    if (user) {
+      try {
+        const batch = writeBatch(db);
+        
+        restoredTasks.forEach((t) => {
+          const ref = doc(collection(db, 'tasks'));
+          batch.set(ref, { ...t, userId: user.uid });
+        });
+        
+        restoredEvents.forEach((e) => {
+          const ref = doc(collection(db, 'events'));
+          batch.set(ref, { ...e, userId: user.uid });
+        });
+        
+        restoredMemories.forEach((m) => {
+          const ref = doc(collection(db, 'memories'));
+          batch.set(ref, { ...m, userId: user.uid });
+        });
+        
+        await batch.commit();
+        console.log("Firestore backup state successfully batch-restored.");
+      } catch (err) {
+        console.error("Firestore batch restoration failed:", err);
+      }
+    } else {
+      saveData('tasks', restoredTasks);
+      saveData('events', restoredEvents);
+      saveData('memories', restoredMemories);
+    }
+  };
+
   // Render sub-views dynamically based on selection
   const renderView = () => {
     switch (currentView) {
@@ -477,6 +513,7 @@ export default function App() {
             onTriggerFocusMode={() => setFocusModeActive(true)}
             onToggleTask={handleToggleTask}
             onTriggerViewChange={setCurrentView}
+            onRestoreState={handleRestoreState}
             proactiveBriefings={proactiveBriefings}
             onAcknowledgeBriefing={(id) => {
               setProactiveBriefings(prev =>
