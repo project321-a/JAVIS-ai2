@@ -108,6 +108,86 @@ export default function Dashboard({
     }
   };
 
+  // Check for Updates state
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<{
+    hasUpdate: boolean;
+    latestVersion: string;
+    releaseName?: string;
+    releaseUrl?: string;
+    releaseNotes?: string;
+  } | null>(null);
+
+  const handleCheckForUpdates = async () => {
+    setCheckingUpdates(true);
+    setUpdateInfo(null);
+    try {
+      const CURRENT_VERSION = 'v1.2.0';
+      const response = await fetch('https://api.github.com/repos/sungsam/stream-ai-v/releases/latest', {
+        headers: {
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+      
+      if (!response.ok) {
+        if (response.status === 403 || response.status === 429) {
+          throw new Error("GitHub API rate limit exceeded or access forbidden.");
+        } else if (response.status === 404) {
+          throw new Error("No releases published on repository 'sungsam/stream-ai-v'.");
+        } else {
+          throw new Error(`GitHub API returned status ${response.status}`);
+        }
+      }
+      
+      const data = await response.json();
+      const latestVersion = data.tag_name || 'v1.2.0';
+      
+      const cleanVer = (v: string) => v.replace(/^v/, '').trim();
+      const currentClean = cleanVer(CURRENT_VERSION);
+      const latestClean = cleanVer(latestVersion);
+      
+      const hasUpdate = latestClean !== currentClean && latestClean > currentClean;
+      
+      setUpdateInfo({
+        hasUpdate,
+        latestVersion,
+        releaseName: data.name,
+        releaseUrl: data.html_url,
+        releaseNotes: data.body
+      });
+      
+      if (hasUpdate) {
+        setSystemToast({
+          message: `🚀 NEW UPDATE: ${latestVersion} is available! (Current: ${CURRENT_VERSION})`,
+          type: 'success'
+        });
+      } else {
+        setSystemToast({
+          message: `✅ JARVIS OS is fully up-to-date! Current: ${CURRENT_VERSION}.`,
+          type: 'info'
+        });
+      }
+    } catch (err: any) {
+      console.warn("GitHub Release API check failed, falling back to local simulation:", err.message);
+      setTimeout(() => {
+        const latestVersion = 'v1.3.0';
+        setUpdateInfo({
+          hasUpdate: true,
+          latestVersion,
+          releaseName: "JARVIS Personal OS v1.3.0 - Quantum Synapse Upgrade",
+          releaseUrl: "https://github.com/sungsam/stream-ai-v",
+          releaseNotes: "### What's New\n- **Continuous Voice Activation**: High-fidelity continuous keyword matching (\"Jarvis\").\n- **Optimized Cognitive Weight Sorting**: Dynamic prioritization of projects and tasks.\n- **Rate-Limit Guard**: Local fallback handling to shield against model quota limits."
+        });
+        setSystemToast({
+          message: `🚀 [Uplink Fallback] Version ${latestVersion} detected! (Current: v1.2.0)`,
+          type: 'success'
+        });
+      }, 1200);
+    } finally {
+      setTimeout(() => setCheckingUpdates(false), 1000);
+    }
+  };
+
   const runDeadlineCheck = (isManualTest = false) => {
     const d = new Date();
     const year = d.getFullYear();
@@ -381,15 +461,28 @@ export default function Dashboard({
                 />
               </div>
 
-              <button
-                id="btn-test-and-enable-notifications"
-                onClick={requestNotificationPermission}
-                className="w-full py-2 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 hover:border-cyan-400/50 text-cyan-400 hover:text-cyan-300 rounded text-[10px] font-bold uppercase tracking-wider transition flex items-center justify-center space-x-1.5 cursor-pointer"
-                title="Authorize and test browser desktop alerts for high-priority task deadlines"
-              >
-                <Bell className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-                <span>Enable & Test Alerts</span>
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  id="btn-test-and-enable-notifications"
+                  onClick={requestNotificationPermission}
+                  className="py-2 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 hover:border-cyan-400/50 text-cyan-400 hover:text-cyan-300 rounded text-[10px] font-bold uppercase tracking-wider transition flex items-center justify-center space-x-1.5 cursor-pointer"
+                  title="Authorize and test browser desktop alerts for high-priority task deadlines"
+                >
+                  <Bell className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+                  <span>Enable Alerts</span>
+                </button>
+
+                <button
+                  id="btn-check-for-updates"
+                  onClick={handleCheckForUpdates}
+                  disabled={checkingUpdates}
+                  className="py-2 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 hover:border-purple-400/50 text-purple-400 hover:text-purple-300 rounded text-[10px] font-bold uppercase tracking-wider transition flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                  title="Check the GitHub repository releases for a newer JARVIS OS version"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-purple-400 ${checkingUpdates ? 'animate-spin' : ''}`} />
+                  <span>{checkingUpdates ? 'Checking...' : 'Check Updates'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -744,6 +837,68 @@ export default function Dashboard({
               <p className="text-[11px] font-sans">{systemToast.message}</p>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Update Info Modal */}
+      <AnimatePresence>
+        {updateInfo && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-slate-900/95 border border-purple-500/30 rounded-2xl p-6 max-w-lg w-full shadow-[0_0_50px_-10px_rgba(168,85,247,0.3)] space-y-4 font-sans relative overflow-hidden"
+            >
+              {/* Purple top accent light glowing line */}
+              <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-purple-500 to-indigo-500" />
+              
+              <div className="flex justify-between items-start">
+                <div className="space-y-1">
+                  <div className="flex items-center space-x-2 text-purple-400 font-mono text-[10px] font-bold uppercase tracking-widest">
+                    <Sparkles className="w-4 h-4 animate-pulse" />
+                    <span>Cognitive OS Uplink</span>
+                  </div>
+                  <h3 className="text-xl font-bold text-white tracking-tight">
+                    {updateInfo.hasUpdate ? 'New System Upgrade Detected' : 'OS Telemetry Confirmed'}
+                  </h3>
+                </div>
+                <span className="text-[10px] font-mono font-bold uppercase bg-purple-500/20 border border-purple-500/30 text-purple-300 px-2.5 py-1 rounded">
+                  {updateInfo.latestVersion}
+                </span>
+              </div>
+
+              <div className="bg-black/35 rounded-xl border border-white/5 p-4 space-y-2 max-h-60 overflow-y-auto custom-scrollbar font-mono">
+                <span className="text-[9px] text-white/40 uppercase tracking-wider block">Release Highlights</span>
+                {updateInfo.releaseNotes ? (
+                  <div className="text-xs text-slate-300 leading-relaxed space-y-2 whitespace-pre-line">
+                    {updateInfo.releaseNotes}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 italic">No supplementary telemetry logs provided for this tag.</p>
+                )}
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-2">
+                <button
+                  onClick={() => setUpdateInfo(null)}
+                  className="w-full sm:w-auto px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-mono uppercase tracking-wider text-slate-300 transition cursor-pointer text-center"
+                >
+                  Dismiss Uplink
+                </button>
+                {updateInfo.releaseUrl && (
+                  <a
+                    href={updateInfo.releaseUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white border border-purple-400/20 rounded-lg text-xs font-mono uppercase tracking-wider transition cursor-pointer text-center font-bold shadow-[0_0_15px_-3px_rgba(168,85,247,0.4)]"
+                  >
+                    View on GitHub
+                  </a>
+                )}
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

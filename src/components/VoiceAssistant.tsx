@@ -94,7 +94,7 @@ export default function VoiceAssistant({
     { sender: 'jarvis', text: "Systems online, Sam. I've finished auditing your project repos. Deployment blocks detected on StreamAIV, but overall cognitive parameters look stable.", time: '05:49 AM' }
   ]);
   const [status, setStatus] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
-  const [speechSynthesisActive, setSpeechSynthesisActive] = useState(false);
+  const [speechSynthesisActive, setSpeechSynthesisActive] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
