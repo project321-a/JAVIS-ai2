@@ -492,6 +492,14 @@ export default function App() {
               const randomScan = scans[Math.floor(Math.random() * scans.length)];
               triggerProactiveBriefing(randomScan.type, randomScan.details);
             }}
+            onAddMemory={(content, category) => handleAddMemory({
+              id: `vmem_${Date.now()}`,
+              content,
+              timestamp: new Date().toISOString(),
+              category,
+              tags: ['Vocal-HUD', 'Spontaneous'],
+              summary: 'Fleeting voice note captured from HUD Core'
+            })}
           />
         );
       case 'workspaces':

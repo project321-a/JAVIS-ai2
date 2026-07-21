@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldAlert, Zap, Compass, Activity, BrainCircuit, Bell, Clock, Sun, RefreshCw, AlertTriangle, Play, GitBranch, Server, CheckCircle2, BellRing, Sparkles, Eye, Trash } from 'lucide-react';
+import { ShieldAlert, Zap, Compass, Activity, BrainCircuit, Bell, Clock, Sun, RefreshCw, AlertTriangle, Play, GitBranch, Server, CheckCircle2, BellRing, Sparkles, Eye, Trash, Database, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Task, Event, Memory, SystemMetrics, ProactiveBriefing } from '../types';
+import JarvisHudCore from './JarvisHudCore';
 
 interface DashboardProps {
   tasks: Task[];
@@ -16,6 +17,7 @@ interface DashboardProps {
   proactiveBriefings?: ProactiveBriefing[];
   onAcknowledgeBriefing?: (id: string) => void;
   onTriggerSystemScan?: () => void;
+  onAddMemory?: (content: string, category: 'voice' | 'idea') => void;
 }
 
 export default function Dashboard({
@@ -31,14 +33,147 @@ export default function Dashboard({
   proactiveBriefings = [],
   onAcknowledgeBriefing,
   onTriggerSystemScan,
+  onAddMemory,
 }: DashboardProps) {
   const [time, setTime] = useState(new Date());
+
+  // Notification and Toast State
+  const [notificationPermission, setNotificationPermission] = useState<string>(() => {
+    return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default';
+  });
+  const [systemToast, setSystemToast] = useState<{ message: string; type: 'success' | 'info' | 'warning' } | null>(null);
 
   // Keep clock running
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const handleBackupState = () => {
+    try {
+      const stateData = {
+        backupDate: new Date().toISOString(),
+        tasks,
+        events,
+        memories,
+      };
+      const jsonString = JSON.stringify(stateData, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `jarvis_system_backup_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setSystemToast({
+        message: "System state backup JSON successfully compiled and downloaded.",
+        type: "success"
+      });
+    } catch (err) {
+      console.error("Backup failed:", err);
+      setSystemToast({
+        message: "Backup engine encountered an error.",
+        type: "warning"
+      });
+    }
+  };
+
+  const requestNotificationPermission = () => {
+    if ('Notification' in window) {
+      Notification.requestPermission().then((permission) => {
+        setNotificationPermission(permission);
+        if (permission === 'granted') {
+          setSystemToast({
+            message: "Browser desktop alerts authorized and active.",
+            type: "success"
+          });
+          runDeadlineCheck(true);
+        } else {
+          setSystemToast({
+            message: "Browser desktop alerts permission denied.",
+            type: "warning"
+          });
+        }
+      });
+    } else {
+      setSystemToast({
+        message: "Notifications not supported in this browser environment.",
+        type: "warning"
+      });
+    }
+  };
+
+  const runDeadlineCheck = (isManualTest = false) => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const todayStr = `${year}-${month}-${day}`;
+
+    // Filter incomplete high priority tasks where deadline reaches today
+    const dueHighPriorityTasks = tasks.filter(
+      (t) => !t.completed && t.priority === 'high' && t.dueDate <= todayStr
+    );
+
+    const hasPermission = typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted';
+
+    if (dueHighPriorityTasks.length > 0) {
+      if (hasPermission) {
+        dueHighPriorityTasks.forEach((task) => {
+          new Notification("🚨 J.A.R.V.I.S. Task Deadline Alert", {
+            body: `High-priority task "${task.title}" reaches its deadline today (${task.dueDate})!`,
+            requireInteraction: true
+          });
+        });
+        if (isManualTest) {
+          setSystemToast({
+            message: `Found ${dueHighPriorityTasks.length} due high-priority task(s). Alert sent.`,
+            type: "success"
+          });
+        }
+      } else {
+        setSystemToast({
+          message: `🚨 DEADLINE WARNING: "${dueHighPriorityTasks[0].title}" reaches its deadline today!`,
+          type: "warning"
+        });
+      }
+    } else {
+      if (isManualTest) {
+        if (hasPermission) {
+          new Notification("🔔 J.A.R.V.I.S. Telemetry Test", {
+            body: "J.A.R.V.I.S. notification channels are active and perfectly synchronized!",
+          });
+          setSystemToast({
+            message: "No deadlines due today. Telemetry channel test alert dispatched.",
+            type: "info"
+          });
+        } else {
+          setSystemToast({
+            message: "System check: No due high-priority tasks found today.",
+            type: "info"
+          });
+        }
+      }
+    }
+  };
+
+  // Run automatic check on mount or task update
+  useEffect(() => {
+    const checkTimer = setTimeout(() => {
+      runDeadlineCheck(false);
+    }, 2000);
+    return () => clearTimeout(checkTimer);
+  }, [tasks]);
+
+  // Toast auto-clear
+  useEffect(() => {
+    if (systemToast) {
+      const timer = setTimeout(() => setSystemToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [systemToast]);
 
   const formattedTime = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const formattedDate = time.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
@@ -55,39 +190,51 @@ export default function Dashboard({
 
   return (
     <div className="space-y-6">
-      {/* HUD spaceship top info header */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      {/* HUD cockpit centerpiece with Golden/Amber Core */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Time, Weather and Location */}
-        <div className="bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-xl flex items-center justify-between font-mono text-xs relative overflow-hidden shadow-[0_4px_30px_rgba(0,0,0,0.4)]">
-          <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500" />
-          <div className="space-y-1 pl-2">
-            <span className="text-[10px] text-white/40 uppercase tracking-widest block">Stark Uplink Clock</span>
-            <p className="text-2xl font-semibold text-white tracking-wider font-mono">{formattedTime}</p>
-            <span className="text-[10px] text-white/50 block">{formattedDate} (UTC-07:00)</span>
-          </div>
-
-          <div className="text-right space-y-1">
-            <span className="text-[10px] text-white/40 uppercase tracking-widest block">Silicon Valley Climate</span>
-            <p className="text-lg font-semibold text-cyan-400 flex items-center justify-end">
-              <Sun className="w-4 h-4 mr-1 text-cyan-400 animate-spin" style={{ animationDuration: '20s' }} />
-              <span>72°F</span>
-            </p>
-            <span className="text-[10px] text-white/50 block">Clear sky • Calm winds</span>
-          </div>
+        {/* Holographic Interactive J.A.R.V.I.S. Core */}
+        <div className="lg:col-span-1">
+          <JarvisHudCore
+            onAddMemory={onAddMemory}
+            unfinishedTasksCount={activeTasks.length}
+            stressLevel={stressLevel}
+          />
         </div>
 
-        {/* AI Greeting Message */}
-        <div className="md:col-span-2 bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-xl flex flex-col justify-center font-mono text-xs relative overflow-hidden shadow-[0_4px_30px_rgba(0,0,0,0.4)]">
-          <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
-          <div className="pl-2">
-            <div className="flex items-center space-x-2 text-cyan-400 text-[10px] uppercase tracking-wider font-bold mb-1.5">
-              <BrainCircuit className="w-4.5 h-4.5 animate-pulse" />
-              <span>JARVIS SYSTEM GREETING</span>
+        {/* Right side widgets: Clock, Climate, and Greeting stacked */}
+        <div className="lg:col-span-2 flex flex-col justify-between space-y-6">
+          {/* Time, Weather and Location */}
+          <div className="bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-xl flex items-center justify-between font-mono text-xs relative overflow-hidden shadow-[0_4px_30px_rgba(0,0,0,0.4)] flex-1">
+            <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500" />
+            <div className="space-y-1 pl-2">
+              <span className="text-[10px] text-white/40 uppercase tracking-widest block">Stark Uplink Clock</span>
+              <p className="text-2xl font-semibold text-white tracking-wider font-mono">{formattedTime}</p>
+              <span className="text-[10px] text-white/50 block">{formattedDate} (UTC-07:00)</span>
             </div>
-            <p className="text-white/90 leading-relaxed font-sans text-xs">
-              "Welcome back, Sam. All critical microservices are synchronized. Your active projects show 1 compile bottleneck. Stated values compliance sits at 94%. Let me know when you're ready to initiate lockout focus."
-            </p>
+
+            <div className="text-right space-y-1">
+              <span className="text-[10px] text-white/40 uppercase tracking-widest block">Silicon Valley Climate</span>
+              <p className="text-lg font-semibold text-cyan-400 flex items-center justify-end">
+                <Sun className="w-4 h-4 mr-1 text-cyan-400 animate-spin" style={{ animationDuration: '20s' }} />
+                <span>72°F</span>
+              </p>
+              <span className="text-[10px] text-white/50 block">Clear sky • Calm winds</span>
+            </div>
+          </div>
+
+          {/* AI Greeting Message */}
+          <div className="bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-xl flex flex-col justify-center font-mono text-xs relative overflow-hidden shadow-[0_4px_30px_rgba(0,0,0,0.4)] flex-1">
+            <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
+            <div className="pl-2">
+              <div className="flex items-center space-x-2 text-cyan-400 text-[10px] uppercase tracking-wider font-bold mb-1.5">
+                <BrainCircuit className="w-4.5 h-4.5 animate-pulse" />
+                <span>JARVIS SYSTEM GREETING</span>
+              </div>
+              <p className="text-white/90 leading-relaxed font-sans text-xs">
+                "Welcome back, Sam. All critical microservices are synchronized. Your active projects show 1 compile bottleneck. Stated values compliance sits at 94%. Let me know when you're ready to initiate lockout focus."
+              </p>
+            </div>
           </div>
         </div>
 
@@ -118,18 +265,49 @@ export default function Dashboard({
             </div>
           </div>
 
-          <div className="pt-4 mt-2 border-t border-white/5 flex flex-col sm:flex-row gap-3 items-center justify-between">
-            <div className="text-[9px] text-slate-500">
-              Uplink sync frequency: <span className="text-cyan-400">45s</span>
+          <div className="pt-4 mt-2 border-t border-white/5 space-y-3">
+            <div className="flex items-center justify-between font-mono text-[9px] text-white/40">
+              <div>
+                Uplink: <span className="text-cyan-400">45s</span>
+              </div>
+              <div>
+                Alerts: <span className={notificationPermission === 'granted' ? 'text-emerald-400 font-bold' : 'text-amber-400'}>{notificationPermission === 'granted' ? 'ACTIVE' : 'READY'}</span>
+              </div>
             </div>
-            <button
-              id="btn-trigger-proactive-scan"
-              onClick={onTriggerSystemScan}
-              className="px-3.5 py-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 active:bg-cyan-600/40 border border-cyan-500/40 text-cyan-300 rounded text-[10px] font-bold uppercase tracking-wider transition flex items-center space-x-1.5 cursor-pointer"
-            >
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '6s' }} />
-              <span>Scan Telemetry Channels</span>
-            </button>
+
+            <div className="grid grid-cols-1 gap-2">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  id="btn-trigger-proactive-scan"
+                  onClick={onTriggerSystemScan}
+                  className="px-2 py-2 bg-cyan-600/10 hover:bg-cyan-600/20 active:bg-cyan-600/30 border border-cyan-500/20 text-cyan-400 rounded text-[10px] font-bold uppercase tracking-wider transition flex items-center justify-center space-x-1.5 cursor-pointer"
+                  title="Scan background channels for new commits/events"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Scan Telemetry</span>
+                </button>
+
+                <button
+                  id="btn-backup-system-state"
+                  onClick={handleBackupState}
+                  className="px-2 py-2 bg-purple-600/10 hover:bg-purple-600/20 active:bg-purple-600/30 border border-purple-500/20 text-purple-400 rounded text-[10px] font-bold uppercase tracking-wider transition flex items-center justify-center space-x-1.5 cursor-pointer"
+                  title="Backup current memories, tasks, and events to JSON file"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  <span>Backup State</span>
+                </button>
+              </div>
+
+              <button
+                id="btn-test-and-enable-notifications"
+                onClick={requestNotificationPermission}
+                className="w-full py-2 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 hover:border-cyan-400/50 text-cyan-400 hover:text-cyan-300 rounded text-[10px] font-bold uppercase tracking-wider transition flex items-center justify-center space-x-1.5 cursor-pointer"
+                title="Authorize and test browser desktop alerts for high-priority task deadlines"
+              >
+                <Bell className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+                <span>Enable & Test Alerts</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -405,6 +583,32 @@ export default function Dashboard({
         </div>
 
       </div>
+
+      {/* HUD System Feedback Toast */}
+      <AnimatePresence>
+        {systemToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl border backdrop-blur-xl font-mono text-xs flex items-center space-x-3 shadow-lg ${
+              systemToast.type === 'success'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 shadow-emerald-500/5'
+                : systemToast.type === 'warning'
+                ? 'bg-red-500/10 border-red-500/30 text-red-300 shadow-red-500/5'
+                : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300 shadow-cyan-500/5'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full animate-pulse ${
+              systemToast.type === 'success' ? 'bg-emerald-400' : systemToast.type === 'warning' ? 'bg-red-400' : 'bg-cyan-400'
+            }`} />
+            <div>
+              <p className="font-bold uppercase text-[9px] opacity-40">System Feedback</p>
+              <p className="text-[11px] font-sans">{systemToast.message}</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
