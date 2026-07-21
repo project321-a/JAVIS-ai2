@@ -1,0 +1,115 @@
+{
+  "collections": {
+    "users": {
+      "fields": {
+        "uid": "string",
+        "email": "string",
+        "displayName": "string",
+        "photoURL": "string",
+        "createdAt": "timestamp"
+      },
+      "indexes": []
+    },
+    "tasks": {
+      "fields": {
+        "userId": "string",
+        "id": "string",
+        "title": "string",
+        "completed": "boolean",
+        "category": "string",
+        "priority": "string",
+        "dueDate": "string",
+        "createdAt": "timestamp"
+      },
+      "indexes": []
+    },
+    "events": {
+      "fields": {
+        "userId": "string",
+        "id": "string",
+        "title": "string",
+        "date": "string",
+        "time": "string",
+        "category": "string",
+        "attendees": "array",
+        "createdAt": "timestamp"
+      }
+    },
+    "relationships": {
+      "fields": {
+        "userId": "string",
+        "id": "string",
+        "name": "string",
+        "role": "string",
+        "anxietyScore": "number",
+        "peaceScore": "number",
+        "boundaries": "array",
+        "topics": "array",
+        "communicationFrequency": "string",
+        "lastContactDate": "string",
+        "totalChatsCount": "map",
+        "createdAt": "timestamp"
+      }
+    },
+    "projects": {
+      "fields": {
+        "userId": "string",
+        "id": "string",
+        "name": "string",
+        "description": "string",
+        "category": "string",
+        "leverage": "number",
+        "progress": "number",
+        "metrics": "array",
+        "createdAt": "timestamp"
+      }
+    },
+    "memories": {
+      "fields": {
+        "userId": "string",
+        "id": "string",
+        "content": "string",
+        "category": "string",
+        "tags": "array",
+        "summary": "string",
+        "timestamp": "string"
+      }
+    },
+    "values": {
+      "fields": {
+        "userId": "string",
+        "id": "string",
+        "name": "string",
+        "priority": "number",
+        "category": "string",
+        "active": "boolean",
+        "createdAt": "timestamp"
+      }
+    },
+    "generatedMedia": {
+      "fields": {
+        "userId": "string",
+        "id": "string",
+        "type": "string",
+        "prompt": "string",
+        "url": "string",
+        "createdAt": "timestamp",
+        "aspectRatio": "string",
+        "size": "string"
+      }
+    },
+    "innerCompassLogs": {
+      "fields": {
+        "userId": "string",
+        "id": "string",
+        "journalText": "string",
+        "triggerType": "string",
+        "dominantEmotion": "string",
+        "valueAlignmentScore": "number",
+        "analysis": "string",
+        "actionStep": "string",
+        "createdAt": "timestamp"
+      }
+    }
+  }
+}

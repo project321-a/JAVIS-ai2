@@ -1,0 +1,6 @@
+{
+  "name": "JARVIS Personal OS",
+  "description": "An omnipresent, highly intelligent personal operating system inspired by J.A.R.V.I.S. from Iron Man.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
